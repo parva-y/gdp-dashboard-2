@@ -36,10 +36,10 @@ if ios_file and android_file and spend_file:
         android_df.columns = android_df.columns.str.strip()
         spend_df.columns = spend_df.columns.str.strip()
         
-        # Convert Date to datetime
-        ios_df['Date'] = pd.to_datetime(ios_df['Date'])
-        android_df['Date'] = pd.to_datetime(android_df['Date'])
-        spend_df['Date'] = pd.to_datetime(spend_df['Date'])
+        # Convert Date to datetime (MM/DD/YYYY format)
+        ios_df['Date'] = pd.to_datetime(ios_df['Date'], format='%m/%d/%Y')
+        android_df['Date'] = pd.to_datetime(android_df['Date'], format='%m/%d/%Y')
+        spend_df['Date'] = pd.to_datetime(spend_df['Date'], format='%m/%d/%Y')
         
         # Merge data
         ios_df = ios_df.add_prefix('ios_').rename(columns={'ios_Date': 'Date'})
