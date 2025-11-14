@@ -1,151 +1,251 @@
 import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+st.set_page_config(page_title="Marketing Funnel Analyzer", layout="wide", page_icon="📊")
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+st.title("📊 Marketing Funnel Impact Analyzer")
+st.markdown("Upload your iOS, Android, and Media Spend data to analyze funnel performance")
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+# File uploaders
+col1, col2, col3 = st.columns(3)
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+with col1:
+    st.subheader("📱 iOS App Data")
+    ios_file = st.file_uploader("Upload iOS CSV", type=['csv'], key='ios')
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+with col2:
+    st.subheader("🤖 Android App Data")
+    android_file = st.file_uploader("Upload Android CSV", type=['csv'], key='android')
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+with col3:
+    st.subheader("💰 Media Spends")
+    spend_file = st.file_uploader("Upload Spends CSV", type=['csv'], key='spend')
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
-
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
-
-    return gdp_df
-
-gdp_df = get_gdp_data()
-
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
-
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
+if ios_file and android_file and spend_file:
+    try:
+        # Read data
+        ios_df = pd.read_csv(ios_file)
+        android_df = pd.read_csv(android_file)
+        spend_df = pd.read_csv(spend_file)
+        
+        # Standardize column names
+        ios_df.columns = ios_df.columns.str.strip()
+        android_df.columns = android_df.columns.str.strip()
+        spend_df.columns = spend_df.columns.str.strip()
+        
+        # Convert Date to datetime
+        ios_df['Date'] = pd.to_datetime(ios_df['Date'])
+        android_df['Date'] = pd.to_datetime(android_df['Date'])
+        spend_df['Date'] = pd.to_datetime(spend_df['Date'])
+        
+        # Merge data
+        ios_df = ios_df.add_prefix('ios_').rename(columns={'ios_Date': 'Date'})
+        android_df = android_df.add_prefix('android_').rename(columns={'android_Date': 'Date'})
+        
+        combined_df = pd.merge(ios_df, android_df, on='Date', how='outer')
+        combined_df = pd.merge(combined_df, spend_df, on='Date', how='outer')
+        combined_df = combined_df.sort_values('Date').fillna(0)
+        
+        # Calculate total metrics
+        # Handle different possible column names
+        install_cols_ios = [col for col in combined_df.columns if 'ios' in col.lower() and 'install' in col.lower()]
+        install_cols_android = [col for col in combined_df.columns if 'android' in col.lower() and 'install' in col.lower()]
+        
+        if install_cols_ios:
+            combined_df['ios_installs'] = combined_df[install_cols_ios[0]]
+        if install_cols_android:
+            combined_df['android_installs'] = combined_df[install_cols_android[0]]
+            
+        combined_df['total_installs'] = combined_df.get('ios_installs', 0) + combined_df.get('android_installs', 0)
+        
+        # KYC columns
+        kyc_cols_ios = [col for col in combined_df.columns if 'ios' in col.lower() and 'kyc' in col.lower()]
+        kyc_cols_android = [col for col in combined_df.columns if 'android' in col.lower() and 'kyc' in col.lower()]
+        
+        if kyc_cols_ios:
+            combined_df['ios_kyc'] = combined_df[kyc_cols_ios[0]]
+        if kyc_cols_android:
+            combined_df['android_kyc'] = combined_df[kyc_cols_android[0]]
+            
+        combined_df['total_kyc'] = combined_df.get('ios_kyc', 0) + combined_df.get('android_kyc', 0)
+        
+        # OTP columns
+        otp_cols_ios = [col for col in combined_df.columns if 'ios' in col.lower() and 'otp' in col.lower()]
+        otp_cols_android = [col for col in combined_df.columns if 'android' in col.lower() and 'otp' in col.lower()]
+        
+        if otp_cols_ios:
+            combined_df['ios_otp'] = combined_df[otp_cols_ios[0]]
+        if otp_cols_android:
+            combined_df['android_otp'] = combined_df[otp_cols_android[0]]
+            
+        combined_df['total_otp'] = combined_df.get('ios_otp', 0) + combined_df.get('android_otp', 0)
+        
+        # Calculate conversion rates and CPI
+        combined_df['install_to_kyc'] = (combined_df['total_kyc'] / combined_df['total_installs'] * 100).fillna(0)
+        combined_df['install_to_otp'] = (combined_df['total_otp'] / combined_df['total_installs'] * 100).fillna(0)
+        combined_df['kyc_to_otp'] = (combined_df['total_otp'] / combined_df['total_kyc'] * 100).fillna(0).replace([float('inf')], 0)
+        combined_df['cpi'] = (combined_df['Spends'] / combined_df['total_installs']).fillna(0).replace([float('inf')], 0)
+        
+        # Summary Metrics
+        st.markdown("---")
+        st.header("📈 Key Performance Metrics")
+        
+        total_spend = combined_df['Spends'].sum()
+        total_installs = combined_df['total_installs'].sum()
+        total_kyc = combined_df['total_kyc'].sum()
+        total_otp = combined_df['total_otp'].sum()
+        avg_cpi = total_spend / total_installs if total_installs > 0 else 0
+        
+        metric_col1, metric_col2, metric_col3, metric_col4, metric_col5 = st.columns(5)
+        
+        with metric_col1:
+            st.metric("Total Spend", f"₹{total_spend:,.0f}")
+        with metric_col2:
+            st.metric("Total Installs", f"{total_installs:,.0f}")
+        with metric_col3:
+            st.metric("Avg CPI", f"₹{avg_cpi:.2f}")
+        with metric_col4:
+            st.metric("Install → KYC", f"{(total_kyc/total_installs*100):.1f}%")
+        with metric_col5:
+            st.metric("Install → OTP", f"{(total_otp/total_installs*100):.1f}%")
+        
+        # Visualizations
+        st.markdown("---")
+        st.header("📊 Impact Analysis")
+        
+        # 1. Spend vs Installs
+        fig1 = make_subplots(specs=[[{"secondary_y": True}]])
+        
+        fig1.add_trace(
+            go.Bar(x=combined_df['Date'], y=combined_df['Spends'], name="Media Spend", marker_color='lightblue'),
+            secondary_y=False,
         )
+        
+        fig1.add_trace(
+            go.Scatter(x=combined_df['Date'], y=combined_df['total_installs'], name="Total Installs", 
+                      line=dict(color='red', width=3), mode='lines+markers'),
+            secondary_y=True,
+        )
+        
+        fig1.update_xaxes(title_text="Date")
+        fig1.update_yaxes(title_text="Media Spend (₹)", secondary_y=False)
+        fig1.update_yaxes(title_text="Installs", secondary_y=True)
+        fig1.update_layout(title="Media Spend Impact on Installs", height=400)
+        
+        st.plotly_chart(fig1, use_container_width=True)
+        
+        # 2. Funnel Analysis
+        col_a, col_b = st.columns(2)
+        
+        with col_a:
+            fig2 = go.Figure()
+            fig2.add_trace(go.Scatter(x=combined_df['Date'], y=combined_df['total_installs'], 
+                                     name='Installs', mode='lines+markers', line=dict(width=3)))
+            fig2.add_trace(go.Scatter(x=combined_df['Date'], y=combined_df['total_kyc'], 
+                                     name='KYC Completed', mode='lines+markers', line=dict(width=3)))
+            fig2.add_trace(go.Scatter(x=combined_df['Date'], y=combined_df['total_otp'], 
+                                     name='Mobile OTP', mode='lines+markers', line=dict(width=3)))
+            fig2.update_layout(title="Funnel Progression Over Time", height=400)
+            st.plotly_chart(fig2, use_container_width=True)
+        
+        with col_b:
+            fig3 = go.Figure()
+            fig3.add_trace(go.Scatter(x=combined_df['Date'], y=combined_df['install_to_kyc'], 
+                                     name='Install → KYC %', mode='lines+markers', line=dict(width=3)))
+            fig3.add_trace(go.Scatter(x=combined_df['Date'], y=combined_df['install_to_otp'], 
+                                     name='Install → OTP %', mode='lines+markers', line=dict(width=3)))
+            fig3.update_layout(title="Conversion Rates Over Time", yaxis_title="Conversion %", height=400)
+            st.plotly_chart(fig3, use_container_width=True)
+        
+        # 3. Platform Comparison
+        st.markdown("---")
+        st.header("🔄 Platform Comparison")
+        
+        col_c, col_d = st.columns(2)
+        
+        with col_c:
+            platform_installs = pd.DataFrame({
+                'Platform': ['iOS', 'Android'],
+                'Installs': [combined_df.get('ios_installs', pd.Series([0])).sum(), 
+                           combined_df.get('android_installs', pd.Series([0])).sum()]
+            })
+            fig4 = px.pie(platform_installs, values='Installs', names='Platform', 
+                         title="Installs by Platform")
+            st.plotly_chart(fig4, use_container_width=True)
+        
+        with col_d:
+            fig5 = go.Figure()
+            fig5.add_trace(go.Bar(x=combined_df['Date'], y=combined_df.get('ios_installs', 0), 
+                                 name='iOS Installs'))
+            fig5.add_trace(go.Bar(x=combined_df['Date'], y=combined_df.get('android_installs', 0), 
+                                 name='Android Installs'))
+            fig5.update_layout(title="Daily Installs by Platform", barmode='stack', height=400)
+            st.plotly_chart(fig5, use_container_width=True)
+        
+        # 4. CPI Analysis
+        st.markdown("---")
+        st.header("💵 Cost Efficiency")
+        
+        fig6 = go.Figure()
+        fig6.add_trace(go.Scatter(x=combined_df['Date'], y=combined_df['cpi'], 
+                                 name='CPI', mode='lines+markers', line=dict(color='green', width=3),
+                                 fill='tozeroy'))
+        fig6.update_layout(title="Cost Per Install (CPI) Trend", yaxis_title="CPI (₹)", height=400)
+        st.plotly_chart(fig6, use_container_width=True)
+        
+        # Data Table
+        st.markdown("---")
+        st.header("📋 Detailed Data")
+        
+        display_cols = ['Date', 'Spends', 'total_installs', 'total_kyc', 'total_otp', 
+                       'cpi', 'install_to_kyc', 'install_to_otp']
+        display_df = combined_df[display_cols].copy()
+        display_df.columns = ['Date', 'Spend', 'Installs', 'KYC', 'OTP', 'CPI', 'Install→KYC%', 'Install→OTP%']
+        display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
+        
+        st.dataframe(display_df, use_container_width=True, height=400)
+        
+        # Key Insights
+        st.markdown("---")
+        st.header("💡 Key Insights")
+        
+        best_cpi_day = combined_df.loc[combined_df['cpi'] > 0, 'cpi'].idxmin()
+        worst_cpi_day = combined_df['cpi'].idxmax()
+        best_conversion_day = combined_df['install_to_kyc'].idxmax()
+        
+        insight_col1, insight_col2, insight_col3 = st.columns(3)
+        
+        with insight_col1:
+            st.info(f"**Best CPI Day:** {combined_df.loc[best_cpi_day, 'Date'].strftime('%Y-%m-%d')}\n\n"
+                   f"CPI: ₹{combined_df.loc[best_cpi_day, 'cpi']:.2f}")
+        
+        with insight_col2:
+            st.success(f"**Best Conversion Day:** {combined_df.loc[best_conversion_day, 'Date'].strftime('%Y-%m-%d')}\n\n"
+                      f"Install→KYC: {combined_df.loc[best_conversion_day, 'install_to_kyc']:.1f}%")
+        
+        with insight_col3:
+            avg_conversion = combined_df['install_to_kyc'].mean()
+            st.warning(f"**Average Install→KYC:** {avg_conversion:.1f}%\n\n"
+                      f"Average Install→OTP: {combined_df['install_to_otp'].mean():.1f}%")
+        
+    except Exception as e:
+        st.error(f"Error processing files: {str(e)}")
+        st.info("Please ensure your CSV files have the correct format with Date column and relevant metrics.")
+else:
+    st.info("👆 Please upload all three CSV files to begin analysis")
+    
+    with st.expander("ℹ️ Expected File Formats"):
+        st.markdown("""
+        **iOS & Android CSV files should contain:**
+        - Date
+        - Installs (or App Store Installs / Play Store Installs)
+        - KYC Completed (or KYC)
+        - Mobile OTP (or OTP)
+        
+        **Media Spends CSV file should contain:**
+        - Date
+        - Spends
+        """)
